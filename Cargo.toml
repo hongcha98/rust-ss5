@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.15.0", features = ["full"] }
+structopt = "0.3"
+bytes = "1.0"
