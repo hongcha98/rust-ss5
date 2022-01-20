@@ -1,9 +1,12 @@
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::{io, slice};
-use std::io::ErrorKind;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::string::FromUtf8Error;
+
 use bytes::{BufMut, BytesMut};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
+
+use crate::socket5::constant::*;
 
 // socket5 https://www.ietf.org/rfc/rfc1928.txt
 pub mod constant {
@@ -59,28 +62,28 @@ impl From<FromUtf8Error> for Error {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reply {
-    REP_SUCESS,
-    REP_SERVER_FAIL,
-    REP_CONN_NO,
-    REP_NETWORK_NO,
-    REP_HOST_NO,
-    REP_CONN_REFUSED,
-    REP_TTL_EXP,
-    REP_CMD_NO,
-    REP_ADDRESS_NO,
-    REP_NO,
-    OTHER(u8),
+    RepSuccess,
+    RepServerFail,
+    RepConnNo,
+    RepNetworkNo,
+    RepHostNo,
+    RepConnRefused,
+    RepTtlExp,
+    RepCmdNo,
+    RepAddressNo,
+    RepNo,
+    Other(u8),
 }
 
 impl Error {
     pub fn to_reply(&self) -> Reply {
         Reply::from_u8(
             match self {
-                Error::IoError(_) => constant::REP_SERVER_FAIL,
-                Error::AddressTypeNo(_) => constant::REP_ADDRESS_NO,
-                Error::AddressDomainNo => constant::REP_HOST_NO,
-                Error::VersionNo(_) => constant::REP_NO,
-                Error::CommandNo(_) => constant::REP_CMD_NO,
+                Error::IoError(_) => REP_SERVER_FAIL,
+                Error::AddressTypeNo(_) => REP_ADDRESS_NO,
+                Error::AddressDomainNo => REP_HOST_NO,
+                Error::VersionNo(_) => REP_NO,
+                Error::CommandNo(_) => REP_CMD_NO,
             }
         )
     }
@@ -90,40 +93,40 @@ impl Error {
 impl Reply {
     pub fn from_u8(u: u8) -> Self {
         match u {
-            constant::REP_SUCESS => Reply::REP_SUCESS,
-            constant::REP_SERVER_FAIL => Reply::REP_SERVER_FAIL,
-            constant::REP_CONN_NO => Reply::REP_CONN_NO,
-            constant::REP_NETWORK_NO => Reply::REP_NETWORK_NO,
-            constant::REP_HOST_NO => Reply::REP_HOST_NO,
-            constant::REP_CONN_REFUSED => Reply::REP_CONN_REFUSED,
-            constant::REP_TTL_EXP => Reply::REP_TTL_EXP,
-            constant::REP_CMD_NO => Reply::REP_CMD_NO,
-            constant::REP_ADDRESS_NO => Reply::REP_ADDRESS_NO,
-            constant::REP_NO => Reply::REP_NO,
-            _ => Reply::OTHER(u),
+            REP_SUCESS => Reply::RepSuccess,
+            REP_SERVER_FAIL => Reply::RepServerFail,
+            REP_CONN_NO => Reply::RepConnNo,
+            REP_NETWORK_NO => Reply::RepNetworkNo,
+            REP_HOST_NO => Reply::RepHostNo,
+            REP_CONN_REFUSED => Reply::RepConnRefused,
+            REP_TTL_EXP => Reply::RepTtlExp,
+            REP_CMD_NO => Reply::RepCmdNo,
+            REP_ADDRESS_NO => Reply::RepAddressNo,
+            REP_NO => Reply::RepNo,
+            _ => Reply::Other(u),
         }
     }
 
     pub fn to_u8(&self) -> u8 {
         match self {
-            Reply::REP_SUCESS => constant::REP_SUCESS,
-            Reply::REP_SERVER_FAIL => constant::REP_SERVER_FAIL,
-            Reply::REP_CONN_NO => constant::REP_CONN_NO,
-            Reply::REP_NETWORK_NO => constant::REP_NETWORK_NO,
-            Reply::REP_HOST_NO => constant::REP_HOST_NO,
-            Reply::REP_CONN_REFUSED => constant::REP_CONN_REFUSED,
-            Reply::REP_TTL_EXP => constant::REP_TTL_EXP,
-            Reply::REP_CMD_NO => constant::REP_CMD_NO,
-            Reply::REP_ADDRESS_NO => constant::REP_ADDRESS_NO,
-            Reply::REP_NO => constant::REP_NO,
-            Reply::OTHER(u) => *u
+            Reply::RepSuccess => REP_SUCESS,
+            Reply::RepServerFail => REP_SERVER_FAIL,
+            Reply::RepConnNo => REP_CONN_NO,
+            Reply::RepNetworkNo => REP_NETWORK_NO,
+            Reply::RepHostNo => REP_HOST_NO,
+            Reply::RepConnRefused => REP_CONN_REFUSED,
+            Reply::RepTtlExp => REP_TTL_EXP,
+            Reply::RepCmdNo => REP_CMD_NO,
+            Reply::RepAddressNo => REP_ADDRESS_NO,
+            Reply::RepNo => REP_NO,
+            Reply::Other(u) => *u
         }
     }
 
     pub async fn from<T>(read: &mut T) -> Result<Self, Error>
         where T: AsyncRead + Unpin
     {
-        let mut reply = [0; 2];
+        let mut reply = [0; 3];
         read.read_exact(&mut reply).await?;
         Ok(Reply::from_u8(reply[1]))
     }
@@ -131,7 +134,7 @@ impl Reply {
     pub async fn write<T>(&self, write: &mut T) -> Result<(), Error>
         where T: AsyncWrite + Unpin
     {
-        write.write_all(&[constant::SOCKET5_VERSION, self.to_u8()]).await?;
+        write.write_all(&[SOCKET5_VERSION, self.to_u8(), RSV]).await?;
         Ok(())
     }
 }
@@ -139,17 +142,17 @@ impl Reply {
 impl Command {
     pub fn to_u8(&self) -> u8 {
         match self {
-            Command::CONNECT => constant::CMD_CONNECT,
-            Command::BIND => constant::CMD_BIND,
-            Command::UDP => constant::CMD_UDP,
+            Command::CONNECT => CMD_CONNECT,
+            Command::BIND => CMD_BIND,
+            Command::UDP => CMD_UDP,
         }
     }
 
     pub fn from_u8(u: u8) -> Result<Self, Error> {
         match u {
-            constant::CMD_CONNECT => Ok(Command::CONNECT),
-            constant::CMD_BIND => Ok(Command::BIND),
-            constant::CMD_UDP => Ok(Command::UDP),
+            CMD_CONNECT => Ok(Command::CONNECT),
+            CMD_BIND => Ok(Command::BIND),
+            CMD_UDP => Ok(Command::UDP),
             _ => Err(Error::CommandNo(u))
         }
     }
@@ -165,7 +168,7 @@ impl Command {
     pub async fn write<T>(&self, write: &mut T) -> Result<(), Error>
         where T: AsyncWrite + Unpin
     {
-        write.write_all(&[constant::SOCKET5_VERSION, self.to_u8(), constant::RSV]).await?;
+        write.write_all(&[SOCKET5_VERSION, self.to_u8(), RSV]).await?;
         Ok(())
     }
 }
@@ -195,7 +198,7 @@ impl ShakeHands {
         where T: AsyncWrite + Unpin
     {
         let mut buf = BytesMut::with_capacity(2 + self.methods.len());
-        buf.put_u8(constant::SOCKET5_VERSION);
+        buf.put_u8(SOCKET5_VERSION);
         buf.put_u8(self.methods.len() as u8);
         buf.put_slice(&self.methods);
         write.write_all(&buf).await?;
@@ -203,30 +206,43 @@ impl ShakeHands {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Address {
     Address(SocketAddr),
     DomainName(String, u16),
 }
 
 impl Address {
+    pub async fn connect(&self) -> Result<TcpStream, Error> {
+        Ok(
+            match self.clone() {
+                Address::Address(addr) => TcpStream::connect(addr).await?,
+                Address::DomainName(addr, port) => TcpStream::connect((addr.as_str(), port)).await?
+            }
+        )
+    }
+
+
     pub async fn from<T>(read: &mut T) -> Result<Self, Error>
         where T: AsyncRead + Unpin
     {
         let mut atyp = [0; 1];
         read.read_exact(&mut atyp).await?;
         Ok(match atyp[0] {
-            0x01 => {
+            ATYP_IPV4 => {
                 let mut ipv4 = [0; 6];
                 read.read_exact(&mut ipv4).await?;
+                let raw_port = &ipv4[4..];
+                let port = unsafe { u16::from_be(*(raw_port.as_ptr() as *const _)) };
                 Address::Address(
                     SocketAddr::V4(
                         SocketAddrV4::new(
                             Ipv4Addr::new(ipv4[0], ipv4[1], ipv4[2], ipv4[3]),
-                            88,
+                            port,
                         )))
             }
-            0x03 => {
-                let mut ipv6 = [0; 16];
+            ATYP_IPV6 => {
+                let mut ipv6 = [0; 18];
                 read.read_exact(&mut ipv6).await?;
                 let ipv6: &[u16] = unsafe { slice::from_raw_parts(ipv6.as_ptr() as *const _, 9) };
                 Address::Address(
@@ -238,7 +254,7 @@ impl Address {
                             0,
                         )))
             }
-            0x04 => {
+            ATYP_DOMAINNAME => {
                 let mut domain_len = [0; 1];
                 read.read_exact(&mut domain_len).await?;
                 let domain_len = domain_len[0] as usize;
@@ -263,16 +279,45 @@ impl Address {
         })
     }
 
-    pub async fn write<T>(&self, _write: &mut T) -> Result<(), Error>
+    pub async fn write<T>(&self, write: &mut T) -> Result<(), Error>
         where T: AsyncWrite + Unpin
     {
+        match self.clone() {
+            Address::Address(addr) => {
+                match addr {
+                    SocketAddr::V4(v4) => {
+                        let mut buf = BytesMut::with_capacity(7);
+                        buf.put_u8(ATYP_IPV4);
+                        buf.put_slice(&v4.ip().octets());
+                        buf.put_u16(v4.port());
+                        write.write_all(&buf).await?;
+                    }
+                    SocketAddr::V6(v6) => {
+                        let mut buf = BytesMut::with_capacity(19);
+                        buf.put_u8(ATYP_IPV6);
+                        buf.put_slice(&v6.ip().octets());
+                        buf.put_u16(v6.port());
+                        write.write_all(&buf).await?;
+                    }
+                }
+            }
+            Address::DomainName(addr, port) => {
+                let mut buf = BytesMut::with_capacity(4 + addr.len());
+                buf.put_u8(ATYP_DOMAINNAME);
+                buf.put_u8(addr.len() as u8);
+                buf.put_slice(addr.as_bytes());
+                buf.put_u16(port);
+                write.write_all(&buf).await?;
+            }
+        };
         Ok(())
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Proxy {
-    command: Command,
-    address: Address,
+    pub command: Command,
+    pub address: Address,
 }
 
 impl Proxy {
@@ -297,8 +342,6 @@ impl Proxy {
         Ok(())
     }
 }
-
-
 
 
 
