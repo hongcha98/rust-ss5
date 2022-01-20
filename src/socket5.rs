@@ -173,7 +173,7 @@ impl Command {
     }
 }
 
-
+#[derive(Debug, Clone)]
 pub struct ShakeHands {
     pub methods: Vec<u8>,
 }
@@ -188,8 +188,8 @@ impl ShakeHands {
     {
         let mut head = [0; 2];
         read.read_exact(&mut head).await?;
-        let methods = head[1];
-        let mut methods = Vec::with_capacity(methods as usize);
+        let nmethods = head[1];
+        let mut methods = vec![0; nmethods as usize];
         read.read_exact(&mut methods).await?;
         Ok(ShakeHands { methods })
     }
