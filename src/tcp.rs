@@ -4,6 +4,8 @@ use tokio::net::TcpStream;
 use crate::config::ServerConfig;
 use crate::socket5::{Command, Error, Proxy, Reply, ShakeHands};
 use crate::socket5::constant::*;
+use log::info;
+
 
 pub struct TcpSocksClient {
     stream: TcpStream,
@@ -21,6 +23,7 @@ impl TcpSocksClient {
         let _hands = ShakeHands::from(stream).await?;
         stream.write_all(&[SOCKET5_VERSION, METHOD_NO_AUTHENTICATION]).await?;
         let proxy = Proxy::from(stream).await?;
+        info!("{:?}", proxy);
         if proxy.command == Command::CONNECT {
             let mut proxy_stream = proxy.address.connect().await?;
             Reply::RepSuccess.write(stream).await?;
